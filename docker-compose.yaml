@@ -1,13 +1,18 @@
-version: "3.7"
+version: "3.8"
 
 services:
   dnsdist:
-    image: hsrnetwork/dnsdist:lastest
+    image: quay.io/andrijdavid/dnsdist:latest
     hostname: dnsdist.example.com
     restart: unless-stopped
     ports:
       - "53:53"
       - "53:53/udp"
+      - "5380:5380"  # Web interface (if enabled in config)
+    volumes:
+      - ./dnsdist.conf:/opt/dnsdist/dnsdist.conf:ro
+      # For persistent logs (optional)
+      # - ./logs:/opt/dnsdist/logs
     # To override the default dnsdist.conf:
     #volumes:
-    #  - /path/to/dnsdist.conf:/opt/dnsdist/dnsdist.conf
+    #  - /path/to/dnsdist.conf:/opt/dnsdist/dnsdist.conf:ro
