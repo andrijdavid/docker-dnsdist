@@ -38,10 +38,14 @@ jobs:
           API_URL="https://pkgs.alpinelinux.org/packages.json?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64"
           echo "Fetching from: $API_URL"
 
-          # Attempt to get the version using jq for JSON parsing
-          if command -v jq >/dev/null 2>&1; then
-            LATEST_DNSDIST=$(curl -s "$API_URL" | jq -r '.packages[0].version' 2>/dev/null)
+          # Install jq if not available
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "Installing jq..."
+            sudo apt-get update && sudo apt-get install -y jq
           fi
+
+          # Attempt to get the version using jq for JSON parsing
+          LATEST_DNSDIST=$(curl -s "$API_URL" | jq -r '.packages[0].version' 2>/dev/null)
 
           if [ -z "$LATEST_DNSDIST" ] || [ "$LATEST_DNSDIST" = "null" ]; then
             echo "JSON API method failed, trying alternate method..."
