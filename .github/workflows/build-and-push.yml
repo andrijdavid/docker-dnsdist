@@ -31,37 +31,38 @@ jobs:
       - name: Get latest dnsdist version for Alpine
         id: get_versions
         run: |
-          # Fetch the latest dnsdist version for Alpine 3.21 using Alpine's APK package query
+          # Fetch the latest dnsdist version for Alpine using Alpine's JSON API
           ALPINE_VERSION=${{ vars.ALPINE_VERSION || '3.21' }}
 
-          # Method 1: Try to get the version using curl and parsing the Alpine packages site
-          LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP '>\d+\.\d+\.\d+-r\d+<' | head -1 | sed 's/[<>]//g')
+          # Use the Alpine packages JSON API which is more reliable than HTML parsing
+          API_URL="https://pkgs.alpinelinux.org/packages.json?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64"
+          echo "Fetching from: $API_URL"
 
-          if [ -z "$LATEST_DNSDIST" ]; then
-            # Method 2: Try a different approach to parse the HTML
-            LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP 'table class="packages".*?(\d+\.\d+\.\d+-r\d+)' | grep -oP '(\d+\.\d+\.\d+-r\d+)' | head -1)
+          # Attempt to get the version using jq for JSON parsing
+          if command -v jq >/dev/null 2>&1; then
+            LATEST_DNSDIST=$(curl -s "$API_URL" | jq -r '.packages[0].version' 2>/dev/null)
           fi
 
-          if [ -z "$LATEST_DNSDIST" ]; then
-            # Method 3: Fallback to using Alpine's repository directly by fetching APKINDEX
-            echo "Attempting to fetch from APKINDEX as fallback..."
-            REPO_URL="http://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community"
-            APKINDEX_URL="${REPO_URL}/x86_64/APKINDEX.tar.gz"
-
-            # Download and process APKINDEX to find the package
-            curl -s "$APKINDEX_URL" -o APKINDEX.tar.gz
-            tar -xzf APKINDEX.tar.gz
-            # Look for dnsdist package in the index
-            LATEST_DNSDIST=$(grep -A 10 -B 10 "dnsdist" APKINDEX | grep "^V:" | head -1 | cut -d':' -f2-)
-            rm -f APKINDEX APKINDEX.tar.gz
+          if [ -z "$LATEST_DNSDIST" ] || [ "$LATEST_DNSDIST" = "null" ]; then
+            echo "JSON API method failed, trying alternate method..."
+            # Alternative: Extract from the HTML page with a more reliable pattern
+            LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -o '<td class="version">[^<]*</td>' | head -1 | sed 's/<[^>]*>//g')
           fi
 
-          if [ -z "$LATEST_DNSDIST" ]; then
+          if [ -z "$LATEST_DNSDIST" ] || [ "$LATEST_DNSDIST" = "" ]; then
+            echo "HTML parsing method failed, using fallback from VERSION file..."
             # Fallback to VERSION file if we can't fetch the latest version from any source
             LATEST_DNSDIST=$(grep DNSDIST_VERSION VERSION | cut -d'=' -f2)
             echo "Using fallback version from VERSION file: $LATEST_DNSDIST"
           else
             echo "Found latest dnsdist version: $LATEST_DNSDIST for Alpine $ALPINE_VERSION"
+          fi
+
+          # Ensure we have a valid version - check that it matches expected format
+          if [[ ! "$LATEST_DNSDIST" =~ ^[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+$ ]]; then
+            echo "Invalid version format detected, using fallback..."
+            LATEST_DNSDIST=$(grep DNSDIST_VERSION VERSION | cut -d'=' -f2)
+            echo "Using fallback version from VERSION file: $LATEST_DNSDIST"
           fi
 
           echo "dnsdist_version=$LATEST_DNSDIST" >> $GITHUB_OUTPUT
