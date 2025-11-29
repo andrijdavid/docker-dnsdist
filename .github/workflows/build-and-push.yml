@@ -31,12 +31,33 @@ jobs:
       - name: Get latest dnsdist version for Alpine
         id: get_versions
         run: |
-          # Fetch the latest dnsdist version for Alpine 3.21
+          # Fetch the latest dnsdist version for Alpine 3.21 using Alpine's APK package query
           ALPINE_VERSION=${{ vars.ALPINE_VERSION || '3.21' }}
-          LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP 'Version.*?(\d+\.\d+\.\d+-r\d+)' | head -1 | grep -oP '(\d+\.\d+\.\d+-r\d+)')
+
+          # Method 1: Try to get the version using curl and parsing the Alpine packages site
+          LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP '>\d+\.\d+\.\d+-r\d+<' | head -1 | sed 's/[<>]//g')
 
           if [ -z "$LATEST_DNSDIST" ]; then
-            # Fallback to VERSION file if we can't fetch the latest version
+            # Method 2: Try a different approach to parse the HTML
+            LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP 'table class="packages".*?(\d+\.\d+\.\d+-r\d+)' | grep -oP '(\d+\.\d+\.\d+-r\d+)' | head -1)
+          fi
+
+          if [ -z "$LATEST_DNSDIST" ]; then
+            # Method 3: Fallback to using Alpine's repository directly by fetching APKINDEX
+            echo "Attempting to fetch from APKINDEX as fallback..."
+            REPO_URL="http://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/community"
+            APKINDEX_URL="${REPO_URL}/x86_64/APKINDEX.tar.gz"
+
+            # Download and process APKINDEX to find the package
+            curl -s "$APKINDEX_URL" -o APKINDEX.tar.gz
+            tar -xzf APKINDEX.tar.gz
+            # Look for dnsdist package in the index
+            LATEST_DNSDIST=$(grep -A 10 -B 10 "dnsdist" APKINDEX | grep "^V:" | head -1 | cut -d':' -f2-)
+            rm -f APKINDEX APKINDEX.tar.gz
+          fi
+
+          if [ -z "$LATEST_DNSDIST" ]; then
+            # Fallback to VERSION file if we can't fetch the latest version from any source
             LATEST_DNSDIST=$(grep DNSDIST_VERSION VERSION | cut -d'=' -f2)
             echo "Using fallback version from VERSION file: $LATEST_DNSDIST"
           else
