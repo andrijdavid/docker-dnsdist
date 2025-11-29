@@ -21,9 +21,30 @@ jobs:
       contents: read
       packages: write
 
+    outputs:
+      dnsdist_version: ${{ steps.get_versions.outputs.dnsdist_version }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Get latest dnsdist version for Alpine
+        id: get_versions
+        run: |
+          # Fetch the latest dnsdist version for Alpine 3.21
+          ALPINE_VERSION=${{ vars.ALPINE_VERSION || '3.21' }}
+          LATEST_DNSDIST=$(curl -s "https://pkgs.alpinelinux.org/packages?name=dnsdist&branch=v${ALPINE_VERSION}&arch=x86_64" | grep -oP 'Version.*?(\d+\.\d+\.\d+-r\d+)' | head -1 | grep -oP '(\d+\.\d+\.\d+-r\d+)')
+
+          if [ -z "$LATEST_DNSDIST" ]; then
+            # Fallback to VERSION file if we can't fetch the latest version
+            LATEST_DNSDIST=$(grep DNSDIST_VERSION VERSION | cut -d'=' -f2)
+            echo "Using fallback version from VERSION file: $LATEST_DNSDIST"
+          else
+            echo "Found latest dnsdist version: $LATEST_DNSDIST for Alpine $ALPINE_VERSION"
+          fi
+
+          echo "dnsdist_version=$LATEST_DNSDIST" >> $GITHUB_OUTPUT
+          echo "alpine_version=$ALPINE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -71,8 +92,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            ALPINE_VERSION=${{ env.ALPINE_VERSION || '3.21' }}
-            DNSDIST_VERSION=${{ env.DNSDIST_VERSION || '2.0.1-r0' }}
+            ALPINE_VERSION=${{ steps.get_versions.outputs.alpine_version }}
+            DNSDIST_VERSION=${{ steps.get_versions.outputs.dnsdist_version }}
 
       - name: Update repo description
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -83,3 +104,28 @@ jobs:
           repository: andrijdavid/dnsdist
           short-description: Modern dnsdist Docker image with latest releases
           readme-filepath: ./README.md
+
+      - name: Create or update release tag
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = process.env.DNSDIST_VERSION;
+            const alpine_version = process.env.ALPINE_VERSION;
+            console.log(`dnsdist version: ${version}, Alpine version: ${alpine_version}`);
+
+            // Create a tag for this build
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/dnsdist-${version}`,
+                sha: context.sha
+              });
+            } catch (error) {
+              console.log(`Tag already exists or error occurred: ${error}`);
+            }
+        env:
+          DNSDIST_VERSION: ${{ steps.get_versions.outputs.dnsdist_version }}
+          ALPINE_VERSION: ${{ steps.get_versions.outputs.alpine_version }}

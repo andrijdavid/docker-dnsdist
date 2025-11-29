@@ -6,8 +6,8 @@ Pre-built images are available on both:
 - Docker Hub: `docker.io/andrijdavid/dnsdist`
 
 ## Features
-- Built on latest Alpine Linux (3.21) for minimal footprint
-- Latest dnsdist version (1.9.10-r0 for Alpine 3.21, or 2.0.1-r0 for Alpine edge)
+- Built on latest Alpine Linux for minimal footprint
+- Automatically updates to latest dnsdist version available in Alpine repositories
 - Multi-architecture support (amd64, arm64, arm/v7)
 - Automated builds every few days
 - Security focused (runs as non-root user)
@@ -55,7 +55,7 @@ docker-compose up -d
 The example configuration in `dnsdist.conf.tmpl` allows connections from private IP ranges and forwards to Cloudflare and Google DNS. Modify as needed for your use case.
 
 ## Automatic Updates
-This image is built automatically every few days to ensure you always have the latest dnsdist version. The GitHub Actions workflow handles multi-platform builds and pushes to both Quay.io and Docker Hub.
+This image is built automatically every few days to ensure you always have the latest dnsdist version. The GitHub Actions workflow automatically detects the latest available dnsdist version in Alpine repositories and builds new images with these updates. Builds are pushed to both Quay.io and Docker Hub.
 
-## Version update
-The `VERSION` file contains the current build versions. The GitHub Actions workflow automatically builds and pushes new images when updates are available in the Alpine repositories.
+## Version Management
+The GitHub Actions workflow automatically fetches the latest available dnsdist version from Alpine repositories during scheduled builds. The VERSION file contains default versions for manual builds.
